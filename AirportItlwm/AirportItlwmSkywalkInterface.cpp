@@ -1141,6 +1141,14 @@ extern "C" void *IOSkywalkPoolWithName(const char *, OSObject *, unsigned int, c
 typedef unsigned int (*IOSkywalkTxQueueCallback)(OSObject *, void **, const void **, unsigned int, void *);
 typedef unsigned int (*IOSkywalkCompletionQueueCallback)(OSObject *, void **, void **, unsigned int, void *);
 
+// IO80211SkywalkInterface::handleChosenMedia(unsigned int). The generic
+// IO80211VirtualInterface starts out reporting IFM_ETHER media; airportd
+// enumerates virtual interfaces with SIOCGIFMEDIA and keeps only
+// (ifm_current & IFM_NMASK) == IFM_IEEE80211, so an AWDL vif that stays on
+// IFM_ETHER never shows up in Apple80211GetVirtualIfListCopy.
+extern "C" IOReturn IO80211VifHandleChosenMedia(void *, unsigned int)
+    __asm__("__ZN23IO80211SkywalkInterface17handleChosenMediaEj");
+
 extern "C" void *IOSkywalkTxSubmissionQueueWithPool(IOSkywalkPacketBufferPool *, unsigned int, unsigned int,
                                                     OSObject *, IOSkywalkTxQueueCallback, void *, unsigned int)
     __asm__("__ZN26IOSkywalkTxSubmissionQueue8withPoolEP25IOSkywalkPacketBufferPooljjP8OSObjectPFjS3_PS_PKP15IOSkywalkPacketjPvES9_j");
@@ -1246,6 +1254,11 @@ static bool AirportItlwmRegisterAWDLInterface(IO80211VirtualInterface *vif, cons
     };
     IOReturn kr = eth->registerEthernetInterface(&info, queues, 4, pool, pool, 0);
     AirportItlwmStep0Log(vifService, "AWDL registerEthernetInterface pool=%p kr=%#x", pool, kr);
+
+    if (kr == kIOReturnSuccess) {
+        IOReturn mediaKr = IO80211VifHandleChosenMedia(vif, 0x80 /* IFM_IEEE80211 */);
+        AirportItlwmStep0Log(vifService, "AWDL handleChosenMedia kr=%#x", mediaKr);
+    }
 
     if (itlwm != nullptr) {
         itlwm->fAWDLPacketPool = pool;
