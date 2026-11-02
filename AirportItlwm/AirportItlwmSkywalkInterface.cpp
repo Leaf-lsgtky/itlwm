@@ -9,6 +9,7 @@
 #include "AirportItlwmSkywalkInterface.hpp"
 #include <sys/CTimeout.hpp>
 #include <libkern/c++/OSMetaClass.h>
+#include <stdarg.h>
 #include <crypto/sha1.h>
 #include <net80211/ieee80211_node.h>
 #include <net80211/ieee80211_ioctl.h>
@@ -30,6 +31,31 @@ const char* hexdump(uint8_t *buf, size_t len) {
     snprintf(str + 3 * i, (len - i) * 3, "%02x ", buf[i]);
     str[MAX(str_len - 2, 0)] = 0;
     return str;
+}
+
+// Step 0 probe: keep a short history in IORegistry so it can be read
+// without sudo/dmesg. XYLog is also emitted for the kernel message buffer.
+void AirportItlwmStep0Log(IOService *owner, const char *fmt, ...)
+{
+    char line[256];
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(line, sizeof(line), fmt, ap);
+    va_end(ap);
+    XYLog("STEP0: %s\n", line);
+
+    static char history[4096];
+    static size_t used = 0;
+    if (used < sizeof(history) - 1) {
+        int n = snprintf(history + used, sizeof(history) - used, "%s\n", line);
+        if (n > 0) {
+            used += (size_t)n;
+            if (used >= sizeof(history))
+                used = sizeof(history) - 1;
+        }
+    }
+    if (owner)
+        owner->setProperty("Step0Log", history);
 }
 
 static int ieeeChanFlag2appleScanFlagVentura(int flags)
@@ -1068,6 +1094,20 @@ IOReturn AirportItlwmSkywalkInterface::setMacAddress(mloAddrArray &addresses)
 }
 #endif
 
+#endif
+
+#ifdef AIRPORT_WCL
+void *AirportItlwmSkywalkInterface::createPeerManager()
+{
+    AirportItlwmStep0Log(this, "createPeerManager");
+    return IO80211SkywalkInterface::createPeerManager();
+}
+
+void *AirportItlwmSkywalkInterface::getP2PSkywalkPeerMgr()
+{
+    AirportItlwmStep0Log(this, "getP2PSkywalkPeerMgr");
+    return IO80211SkywalkInterface::getP2PSkywalkPeerMgr();
+}
 #endif
 
 #ifndef AIRPORT_WCL

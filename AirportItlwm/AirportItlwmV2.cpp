@@ -270,6 +270,7 @@ bool AirportItlwm::start(IOService *provider)
         return false;
 #endif
     XYLog("%s\n", __PRETTY_FUNCTION__);
+    AirportItlwmStep0Log(this, "STEP0 BUILD ACTIVE awdl-probe-v1");
     struct IOSkywalkEthernetInterface::RegistrationInfo registInfo;
     int boot_value = 0;
 
@@ -941,6 +942,24 @@ bool AirportItlwm::getLogPipes(CCPipe**logPipe, CCPipe**eventPipe, CCPipe**snaps
     return ret;
 }
 
+IO80211VirtualInterface *AirportItlwm::createVirtualInterface(ether_addr *eth, unsigned int role)
+{
+    AirportItlwmStep0Log(this, "createVirtualInterface role=%u", role);
+    return super::createVirtualInterface(eth, role);
+}
+
+SInt32 AirportItlwm::enableVirtualInterface(IO80211VirtualInterface *interface)
+{
+    AirportItlwmStep0Log(this, "enableVirtualInterface");
+    return super::enableVirtualInterface(interface);
+}
+
+SInt32 AirportItlwm::disableVirtualInterface(IO80211VirtualInterface *interface)
+{
+    AirportItlwmStep0Log(this, "disableVirtualInterface");
+    return super::disableVirtualInterface(interface);
+}
+
 #define APPLE80211_CAPA_AWDL_FEATURE_AUTO_UNLOCK    0x00000004
 #define APPLE80211_CAPA_AWDL_FEATURE_WOW            0x00000080
 
@@ -949,6 +968,11 @@ getCARD_CAPABILITIES(OSObject *object,
                                      struct apple80211_capability_data *cd)
 {
     uint32_t caps = fHalService->get80211Controller()->ic_caps;
+    static unsigned int step0CapLogs = 0;
+    if (step0CapLogs < 8) {
+        step0CapLogs++;
+        AirportItlwmStep0Log(this, "getCARD_CAPABILITIES #%u", step0CapLogs);
+    }
     memset(cd, 0, sizeof(struct apple80211_capability_data));
 
     if (caps & IEEE80211_C_WEP)
@@ -1036,6 +1060,12 @@ getCARD_CAPABILITIES(OSObject *object,
 //    cd->capabilities[11] |= (2 | 4 | 8 | 0x10 | 0x20 | 0x40 | 0x80);
 
 #endif
+    if (step0CapLogs <= 8) {
+        AirportItlwmStep0Log(this, "caps %02x %02x %02x %02x %02x %02x %02x",
+                             cd->capabilities[0], cd->capabilities[1], cd->capabilities[2],
+                             cd->capabilities[3], cd->capabilities[5], cd->capabilities[6],
+                             cd->capabilities[8]);
+    }
     return kIOReturnSuccess;
 }
 
@@ -1172,6 +1202,10 @@ SInt32 AirportItlwm::apple80211_ioctl(IO80211SkywalkInterface *interface,unsigne
 {
     if (!ml_at_interrupt_context())
         XYLog("%s cmd: %s b1: %d b2: %d\n", __FUNCTION__, convertApple80211IOCTLToString((unsigned int)cmd), b1, b2);
+    if (cmd == APPLE80211_IOC_VIRTUAL_IF_CREATE || cmd == APPLE80211_IOC_VIRTUAL_IF_DELETE ||
+        cmd == APPLE80211_IOC_VIRTUAL_IF_ROLE || cmd == APPLE80211_IOC_VIRTUAL_IF_PARENT)
+        AirportItlwmStep0Log(this, "apple80211_ioctl cmd=%s(%lu) b1=%d b2=%d",
+                             convertApple80211IOCTLToString((unsigned int)cmd), cmd, b1, b2);
 #ifdef AIRPORT_WCL
     return kIOReturnUnsupported;
 #else
@@ -1183,6 +1217,12 @@ SInt32 AirportItlwm::apple80211SkywalkRequest(UInt request,int cmd,IO80211Skywal
 {
     if (!ml_at_interrupt_context())
         XYLog("%s 1 cmd: %s request: %d\n", __FUNCTION__, convertApple80211IOCTLToString(cmd), request);
+    static unsigned int step0Skywalk1 = 0;
+    if (step0Skywalk1 < 40) {
+        step0Skywalk1++;
+        AirportItlwmStep0Log(this, "apple80211SkywalkRequest1 cmd=%s(%d) request=%u",
+                             convertApple80211IOCTLToString(cmd), cmd, request);
+    }
     return kIOReturnUnsupported;
 }
 
@@ -1190,6 +1230,12 @@ SInt32 AirportItlwm::apple80211SkywalkRequest(UInt request,int cmd,IO80211Skywal
 {
     if (!ml_at_interrupt_context())
         XYLog("%s 2 cmd: %s request: %d\n", __FUNCTION__, convertApple80211IOCTLToString(cmd), request);
+    static unsigned int step0Skywalk2 = 0;
+    if (step0Skywalk2 < 40) {
+        step0Skywalk2++;
+        AirportItlwmStep0Log(this, "apple80211SkywalkRequest2 cmd=%s(%d) request=%u",
+                             convertApple80211IOCTLToString(cmd), cmd, request);
+    }
     return kIOReturnUnsupported;
 }
 

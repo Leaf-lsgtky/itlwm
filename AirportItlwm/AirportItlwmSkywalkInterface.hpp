@@ -21,6 +21,9 @@
 #define AIRPORT_SKYWALK_OVERRIDE override
 #endif
 
+// Step 0 probe: record WCL virtual-interface/AWDL entry points in IORegistry.
+void AirportItlwmStep0Log(IOService *owner, const char *fmt, ...);
+
 class AirportItlwmSkywalkInterface : public IO80211InfraProtocol {
     OSDeclareDefaultStructors(AirportItlwmSkywalkInterface)
     
@@ -37,7 +40,10 @@ public:
     IOReturn getLQM_STATISTICS(apple80211_lqm_statistics*) override { return kIOReturnUnsupported; }
     IOReturn getDEVICE_ORIENTATION(apple80211_device_orientation*) override { return kIOReturnUnsupported; }
     IOReturn getACCESSORY_STATE(apple80211_device_accessory_info*) override { return kIOReturnUnsupported; }
-    IOReturn getP2P_DEVICE_CAPABILITY(apple80211_p2p_device_capability*) override { return kIOReturnUnsupported; }
+    IOReturn getP2P_DEVICE_CAPABILITY(apple80211_p2p_device_capability*) override {
+        AirportItlwmStep0Log(this, "getP2P_DEVICE_CAPABILITY");
+        return kIOReturnUnsupported;
+    }
     IOReturn getPOWERTABLE_VERSION(apple80211_powertable_version_data*) override { return kIOReturnUnsupported; }
 #endif
     IOReturn setCLEAR_PMKSA_CACHE(void*) override;
@@ -113,6 +119,10 @@ public:
 #endif
 
     virtual bool init(IOService *) AIRPORT_SKYWALK_OVERRIDE;
+#ifdef AIRPORT_WCL
+    virtual void *createPeerManager() AIRPORT_SKYWALK_OVERRIDE;
+    virtual void *getP2PSkywalkPeerMgr() AIRPORT_SKYWALK_OVERRIDE;
+#endif
 //    virtual ifnet_t getBSDInterface(void) AIRPORT_SKYWALK_OVERRIDE;
     
     void associateSSID(uint8_t *ssid, uint32_t ssid_len, const struct ether_addr &bssid, uint32_t authtype_lower, uint32_t authtype_upper, uint8_t *key, uint32_t key_len, int key_index);
@@ -177,7 +187,10 @@ public:
     virtual IOReturn getPRIVATE_MAC(apple80211_private_mac_data *) AIRPORT_SKYWALK_OVERRIDE { return kIOReturnUnsupported; }
     virtual IOReturn getRANGING_ENABLE(apple80211_ranging_enable_request_t *) AIRPORT_SKYWALK_OVERRIDE { return kIOReturnUnsupported; }
     virtual IOReturn getRANGING_START(apple80211_ranging_start_request_t *) AIRPORT_SKYWALK_OVERRIDE { return kIOReturnUnsupported; }
-    virtual IOReturn getAWDL_RSDB_CAPS(apple80211_rsdb_capability *) AIRPORT_SKYWALK_OVERRIDE { return kIOReturnUnsupported; }
+    virtual IOReturn getAWDL_RSDB_CAPS(apple80211_rsdb_capability *) AIRPORT_SKYWALK_OVERRIDE {
+        AirportItlwmStep0Log(this, "getAWDL_RSDB_CAPS");
+        return kIOReturnUnsupported;
+    }
     virtual IOReturn getTKO_PARAMS(apple80211_tko_params *) AIRPORT_SKYWALK_OVERRIDE { return kIOReturnUnsupported; }
     virtual IOReturn getTKO_DUMP(apple80211_tko_dump *) AIRPORT_SKYWALK_OVERRIDE { return kIOReturnUnsupported; }
 #ifdef AIRPORT_WCL
@@ -211,7 +224,10 @@ public:
     virtual IOReturn getHW_ADDR(apple80211_hw_mac_address *) AIRPORT_SKYWALK_OVERRIDE;
     virtual IOReturn getHE_MCS_INDEX_SET(apple80211_he_mcs_index_set_data *) AIRPORT_SKYWALK_OVERRIDE { return kIOReturnUnsupported; }
     virtual IOReturn getCHIP_DIAGS(appl80211_chip_diags_data *) AIRPORT_SKYWALK_OVERRIDE { return kIOReturnUnsupported; }
-    virtual IOReturn getHP2P_CTRL(apple80211_hp2p_ctrl *) AIRPORT_SKYWALK_OVERRIDE { return kIOReturnUnsupported; }
+    virtual IOReturn getHP2P_CTRL(apple80211_hp2p_ctrl *) AIRPORT_SKYWALK_OVERRIDE {
+        AirportItlwmStep0Log(this, "getHP2P_CTRL");
+        return kIOReturnUnsupported;
+    }
     virtual IOReturn getREQUEST_BSS_BLACKLIST(void *) AIRPORT_SKYWALK_OVERRIDE { return kIOReturnUnsupported; }
     virtual IOReturn getASSOC_READY_STATUS(apple80211_assoc_ready *) AIRPORT_SKYWALK_OVERRIDE { return kIOReturnUnsupported; }
     virtual IOReturn getTXRX_CHAIN_INFO(apple80211_txrx_chain_info *) AIRPORT_SKYWALK_OVERRIDE { return kIOReturnUnsupported; }
@@ -301,11 +317,23 @@ public:
     virtual IOReturn setIE(apple80211_ie_data *) AIRPORT_SKYWALK_OVERRIDE { return kIOReturnUnsupported; }
     virtual IOReturn setWOW_TEST(apple80211_wow_test_data *) AIRPORT_SKYWALK_OVERRIDE { return kIOReturnUnsupported; }
     virtual IOReturn setSCANCACHE_CLEAR(void *) AIRPORT_SKYWALK_OVERRIDE;
-    virtual IOReturn setVIRTUAL_IF_CREATE(apple80211_virt_if_create_data *) AIRPORT_SKYWALK_OVERRIDE { return kIOReturnUnsupported; }
+    virtual IOReturn setVIRTUAL_IF_CREATE(apple80211_virt_if_create_data *data) AIRPORT_SKYWALK_OVERRIDE {
+        AirportItlwmStep0Log(this, "setVIRTUAL_IF_CREATE role=%u mac=%02x:%02x:%02x:%02x:%02x:%02x bsd=%.*s",
+                             data ? data->role : 0,
+                             data ? (unsigned int)data->mac[0] : 0, data ? (unsigned int)data->mac[1] : 0,
+                             data ? (unsigned int)data->mac[2] : 0, data ? (unsigned int)data->mac[3] : 0,
+                             data ? (unsigned int)data->mac[4] : 0, data ? (unsigned int)data->mac[5] : 0,
+                             data ? (int)sizeof(data->bsd_name) : 0,
+                             data ? (const char *)data->bsd_name : "");
+        return kIOReturnUnsupported;
+    }
     virtual IOReturn setBT_COEX_FLAGS(apple80211_state_data *) AIRPORT_SKYWALK_OVERRIDE { return kIOReturnUnsupported; }
     virtual IOReturn setROAM(apple80211_sta_roam_data *) AIRPORT_SKYWALK_OVERRIDE { return kIOReturnUnsupported; }
     virtual IOReturn setHT_CAPABILITY(apple80211_ht_capability *) AIRPORT_SKYWALK_OVERRIDE { return kIOReturnUnsupported; }
-    virtual IOReturn setAWDL_FORCED_ROAM_CONFIG(apple80211_awdl_forced_roam_config *) AIRPORT_SKYWALK_OVERRIDE { return kIOReturnUnsupported; }
+    virtual IOReturn setAWDL_FORCED_ROAM_CONFIG(apple80211_awdl_forced_roam_config *) AIRPORT_SKYWALK_OVERRIDE {
+        AirportItlwmStep0Log(this, "setAWDL_FORCED_ROAM_CONFIG");
+        return kIOReturnUnsupported;
+    }
     virtual IOReturn setOFFLOAD_ARP(apple80211_offload_arp_data *) AIRPORT_SKYWALK_OVERRIDE { return kIOReturnUnsupported; }
     virtual IOReturn setOFFLOAD_NDP(apple80211_offload_ndp_data *) AIRPORT_SKYWALK_OVERRIDE { return kIOReturnUnsupported; }
     virtual IOReturn setOFFLOAD_SCAN(apple80211_offload_scan_data *) AIRPORT_SKYWALK_OVERRIDE { return kIOReturnUnsupported; }
@@ -314,7 +342,10 @@ public:
     virtual IOReturn setGAS_SET_PEER(apple80211_gas_peer_t *) AIRPORT_SKYWALK_OVERRIDE { return kIOReturnUnsupported; }
     virtual IOReturn setVHT_CAPABILITY(apple80211_vht_capability *) AIRPORT_SKYWALK_OVERRIDE { return kIOReturnUnsupported; }
     virtual IOReturn setROAM_PROFILE(apple80211_roam_profile_band_data *) AIRPORT_SKYWALK_OVERRIDE { return kIOReturnUnsupported; }
-    virtual IOReturn setAWDL_ENABLE_ROAMING(void *) AIRPORT_SKYWALK_OVERRIDE { return kIOReturnUnsupported; }
+    virtual IOReturn setAWDL_ENABLE_ROAMING(void *) AIRPORT_SKYWALK_OVERRIDE {
+        AirportItlwmStep0Log(this, "setAWDL_ENABLE_ROAMING");
+        return kIOReturnUnsupported;
+    }
     virtual IOReturn setDBG_GUARD_TIME_PARAMS(apple80211_dbg_guard_time_params *) AIRPORT_SKYWALK_OVERRIDE { return kIOReturnUnsupported; }
     virtual IOReturn setLEAKY_AP_STATS_MODE(apple80211_leaky_ap_setting *) AIRPORT_SKYWALK_OVERRIDE { return kIOReturnUnsupported; }
     virtual IOReturn setPRIVATE_MAC(apple80211_private_mac_data *) AIRPORT_SKYWALK_OVERRIDE { return kIOReturnUnsupported; }
@@ -340,7 +371,10 @@ public:
     virtual IOReturn setSCAN_CONTROL(apple80211_scan_control_params *) AIRPORT_SKYWALK_OVERRIDE { return kIOReturnUnsupported; }
     virtual IOReturn setUSB_HOST_NOTIFICATION(apple80211_usb_host_notification_data *) AIRPORT_SKYWALK_OVERRIDE { return kIOReturnUnsupported; }
     virtual IOReturn setSET_MAC_ADDRESS(apple80211_set_mac_address *) AIRPORT_SKYWALK_OVERRIDE { return kIOReturnUnsupported; }
-    virtual IOReturn setHP2P_CTRL(apple80211_hp2p_ctrl *) AIRPORT_SKYWALK_OVERRIDE { return kIOReturnUnsupported; }
+    virtual IOReturn setHP2P_CTRL(apple80211_hp2p_ctrl *) AIRPORT_SKYWALK_OVERRIDE {
+        AirportItlwmStep0Log(this, "setHP2P_CTRL");
+        return kIOReturnUnsupported;
+    }
     virtual IOReturn setABORT_SCAN(apple80211_abort_scan *) AIRPORT_SKYWALK_OVERRIDE { return kIOReturnUnsupported; }
     virtual IOReturn setSET_PROPERTY(apple80211_set_property_unserialized_data *) AIRPORT_SKYWALK_OVERRIDE { return kIOReturnUnsupported; }
     virtual IOReturn setROAM_CACHE_UPDATE(apple80211_roam_cache_data *) AIRPORT_SKYWALK_OVERRIDE { return kIOReturnUnsupported; }

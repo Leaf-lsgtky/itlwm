@@ -182,6 +182,10 @@ public:
 //        XYLog("%s\n", __FUNCTION__);
         return getCARD_CAPABILITIES((OSObject *)interface, data);
     }
+    // Step 0: probe the legacy controller virtual-interface path.
+    virtual IO80211VirtualInterface* createVirtualInterface(ether_addr *eth, unsigned int role) AIRPORT_LEGACY_OVERRIDE;
+    virtual SInt32 enableVirtualInterface(IO80211VirtualInterface *interface) AIRPORT_LEGACY_OVERRIDE;
+    virtual SInt32 disableVirtualInterface(IO80211VirtualInterface *interface) AIRPORT_LEGACY_OVERRIDE;
     virtual IOReturn getPOWER(IO80211SkywalkInterface *interface,apple80211_power_data *data) override {
 //        XYLog("%s\n", __FUNCTION__);
         return getPOWER((OSObject *)interface, data);
