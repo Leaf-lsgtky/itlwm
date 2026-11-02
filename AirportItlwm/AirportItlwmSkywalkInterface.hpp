@@ -317,16 +317,7 @@ public:
     virtual IOReturn setIE(apple80211_ie_data *) AIRPORT_SKYWALK_OVERRIDE { return kIOReturnUnsupported; }
     virtual IOReturn setWOW_TEST(apple80211_wow_test_data *) AIRPORT_SKYWALK_OVERRIDE { return kIOReturnUnsupported; }
     virtual IOReturn setSCANCACHE_CLEAR(void *) AIRPORT_SKYWALK_OVERRIDE;
-    virtual IOReturn setVIRTUAL_IF_CREATE(apple80211_virt_if_create_data *data) AIRPORT_SKYWALK_OVERRIDE {
-        AirportItlwmStep0Log(this, "setVIRTUAL_IF_CREATE role=%u mac=%02x:%02x:%02x:%02x:%02x:%02x bsd=%.*s",
-                             data ? data->role : 0,
-                             data ? (unsigned int)data->mac[0] : 0, data ? (unsigned int)data->mac[1] : 0,
-                             data ? (unsigned int)data->mac[2] : 0, data ? (unsigned int)data->mac[3] : 0,
-                             data ? (unsigned int)data->mac[4] : 0, data ? (unsigned int)data->mac[5] : 0,
-                             data ? (int)sizeof(data->bsd_name) : 0,
-                             data ? (const char *)data->bsd_name : "");
-        return kIOReturnUnsupported;
-    }
+    virtual IOReturn setVIRTUAL_IF_CREATE(apple80211_virt_if_create_data *data) AIRPORT_SKYWALK_OVERRIDE;
     virtual IOReturn setBT_COEX_FLAGS(apple80211_state_data *) AIRPORT_SKYWALK_OVERRIDE { return kIOReturnUnsupported; }
     virtual IOReturn setROAM(apple80211_sta_roam_data *) AIRPORT_SKYWALK_OVERRIDE { return kIOReturnUnsupported; }
     virtual IOReturn setHT_CAPABILITY(apple80211_ht_capability *) AIRPORT_SKYWALK_OVERRIDE { return kIOReturnUnsupported; }

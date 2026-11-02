@@ -19,6 +19,20 @@
 OSDefineMetaClassAndStructors(AirportItlwm, IO80211Controller);
 OSDefineMetaClassAndStructors(CTimeout, OSObject)
 
+#if __IO80211_TARGET >= __MAC_26_0
+// macOS 26's IO80211VirtualInterface has no exported default constructor and
+// its metaclass alloc() returns NULL. Build an instance the same way a
+// subclass constructor would: allocate with the family's operator new, run
+// the family's OSMetaClass constructor, then call init().
+// The metaclass reports an instance size of 0x130.
+static const size_t kIO80211VirtualInterfaceSize = 0x130;
+extern "C" void *IO80211VifNew(size_t) __asm__("__ZN23IO80211VirtualInterfacenwEm");
+extern "C" void IO80211VifDelete(void *, size_t) __asm__("__ZN23IO80211VirtualInterfacedlEPvm");
+extern "C" void IO80211VifCtor(void *, const OSMetaClass *) __asm__("__ZN23IO80211VirtualInterfaceC2EPK11OSMetaClass");
+extern "C" bool IO80211VifInit(void *, IO80211Controller *, ether_addr *, unsigned int, const char *) __asm__("__ZN23IO80211VirtualInterface4initEP17IO80211ControllerP10ether_addrjPKc");
+extern "C" char IO80211VifMetaClass[] __asm__("__ZN23IO80211VirtualInterface10gMetaClassE");
+#endif
+
 IO80211WorkQueue *_fWorkloop;
 IOCommandGate *_fCommandGate;
 
@@ -139,6 +153,7 @@ bool AirportItlwm::init(OSDictionary *properties)
 {
     XYLog("%s\n", __PRETTY_FUNCTION__);
     bool ret = super::init(properties);
+    fAWDLInterface = nullptr;
     awdlSyncEnable = true;
     power_state = 0;
     memset(geo_location_cc, 0, sizeof(geo_location_cc));
@@ -270,7 +285,7 @@ bool AirportItlwm::start(IOService *provider)
         return false;
 #endif
     XYLog("%s\n", __PRETTY_FUNCTION__);
-    AirportItlwmStep0Log(this, "STEP0 BUILD ACTIVE awdl-probe-v2");
+    AirportItlwmStep0Log(this, "STEP1 BUILD ACTIVE awdl-create-v1");
     struct IOSkywalkEthernetInterface::RegistrationInfo registInfo;
     int boot_value = 0;
 
@@ -945,6 +960,30 @@ bool AirportItlwm::getLogPipes(CCPipe**logPipe, CCPipe**eventPipe, CCPipe**snaps
 IO80211VirtualInterface *AirportItlwm::createVirtualInterface(ether_addr *eth, unsigned int role)
 {
     AirportItlwmStep0Log(this, "createVirtualInterface role=%u", role);
+
+    // The generic IO80211Controller implementation only handles role 7
+    // (soft AP). AWDL needs a role-6 IO80211VirtualInterface.
+    if (role == APPLE80211_VIF_AWDL) {
+#if __IO80211_TARGET >= __MAC_26_0
+        void *vif = IO80211VifNew(kIO80211VirtualInterfaceSize);
+        if (vif == nullptr) {
+            AirportItlwmStep0Log(this, "AWDL virtual interface allocation failed");
+            return nullptr;
+        }
+        // init() treats the Skywalk state pointer as NULL when uninitialized.
+        memset(vif, 0, kIO80211VirtualInterfaceSize);
+        IO80211VifCtor(vif, (const OSMetaClass *)IO80211VifMetaClass);
+        if (!IO80211VifInit(vif, this, eth, role, "awdl")) {
+            AirportItlwmStep0Log(this, "AWDL virtual interface init failed");
+            IO80211VifDelete(vif, kIO80211VirtualInterfaceSize);
+            return nullptr;
+        }
+        fAWDLInterface = (IO80211VirtualInterface *)vif;
+        AirportItlwmStep0Log(this, "AWDL virtual interface created %p", vif);
+        return fAWDLInterface;
+#endif
+    }
+
     return super::createVirtualInterface(eth, role);
 }
 

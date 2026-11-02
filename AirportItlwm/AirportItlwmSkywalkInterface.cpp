@@ -1113,6 +1113,43 @@ void *AirportItlwmSkywalkInterface::getP2PSkywalkPeerMgr()
 }
 #endif
 
+IOReturn AirportItlwmSkywalkInterface::setVIRTUAL_IF_CREATE(apple80211_virt_if_create_data *data)
+{
+    AirportItlwmStep0Log(this, "setVIRTUAL_IF_CREATE role=%u mac=%02x:%02x:%02x:%02x:%02x:%02x bsd=%.*s",
+                         data ? data->role : 0,
+                         data ? (unsigned int)data->mac[0] : 0, data ? (unsigned int)data->mac[1] : 0,
+                         data ? (unsigned int)data->mac[2] : 0, data ? (unsigned int)data->mac[3] : 0,
+                         data ? (unsigned int)data->mac[4] : 0, data ? (unsigned int)data->mac[5] : 0,
+                         data ? (int)sizeof(data->bsd_name) : 0,
+                         data ? (const char *)data->bsd_name : "");
+    if (data == nullptr)
+        return kIOReturnBadArgument;
+
+    IO80211Controller *controller = getController();
+    if (controller == nullptr) {
+        AirportItlwmStep0Log(this, "setVIRTUAL_IF_CREATE: no controller");
+        return kIOReturnNotReady;
+    }
+
+    AirportItlwm *itlwm = OSDynamicCast(AirportItlwm, controller);
+    if (data->role == APPLE80211_VIF_AWDL && itlwm != nullptr && itlwm->fAWDLInterface != nullptr) {
+        AirportItlwmStep0Log(this, "AWDL interface already exists");
+        return kIOReturnSuccess;
+    }
+
+    ether_addr mac;
+    memcpy(mac.octet, data->mac, APPLE80211_ADDR_LEN);
+    IO80211VirtualInterface *vif = nullptr;
+    if (!controller->attachVirtualInterface(&vif, &mac, data->role, true)) {
+        if (itlwm != nullptr)
+            itlwm->fAWDLInterface = nullptr;
+        AirportItlwmStep0Log(this, "attachVirtualInterface role=%u failed", data->role);
+        return kIOReturnError;
+    }
+    AirportItlwmStep0Log(this, "attachVirtualInterface role=%u ok vif=%p", data->role, vif);
+    return kIOReturnSuccess;
+}
+
 #ifndef AIRPORT_WCL
 IOReturn AirportItlwmSkywalkInterface::getHW_ADDR(apple80211_hw_mac_address *)
 {

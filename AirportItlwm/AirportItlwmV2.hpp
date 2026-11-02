@@ -265,6 +265,7 @@ public:
     bool magicPacketSupported;
     
     //AWDL
+    IO80211VirtualInterface *fAWDLInterface;
     uint8_t *syncFrameTemplate;
     uint32_t syncFrameTemplateLength;
     uint8_t awdlBSSID[6];
