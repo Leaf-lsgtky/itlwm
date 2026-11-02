@@ -44,16 +44,19 @@ void AirportItlwmStep0Log(IOService *owner, const char *fmt, ...)
     va_end(ap);
     XYLog("STEP0: %s\n", line);
 
-    static char history[4096];
+    static char history[16384];
     static size_t used = 0;
-    if (used < sizeof(history) - 1) {
-        int n = snprintf(history + used, sizeof(history) - used, "%s\n", line);
-        if (n > 0) {
-            used += (size_t)n;
-            if (used >= sizeof(history))
-                used = sizeof(history) - 1;
-        }
+    size_t len = strlen(line);
+    if (used + len + 1 >= sizeof(history)) {
+        // Keep the most recent half so late AWDL calls are not lost.
+        size_t keep = sizeof(history) / 2;
+        memmove(history, history + sizeof(history) - keep, keep);
+        used = keep;
     }
+    memcpy(history + used, line, len);
+    used += len;
+    history[used++] = '\n';
+    history[used] = '\0';
     if (owner)
         owner->setProperty("Step0Log", history);
 }
