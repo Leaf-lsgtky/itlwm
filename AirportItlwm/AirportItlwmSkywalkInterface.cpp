@@ -1288,7 +1288,9 @@ IOReturn AirportItlwmSkywalkInterface::setVIRTUAL_IF_CREATE(apple80211_virt_if_c
 
     AirportItlwm *itlwm = OSDynamicCast(AirportItlwm, controller);
     if (data->role == APPLE80211_VIF_AWDL && itlwm != nullptr && itlwm->fAWDLInterface != nullptr) {
+#if __IO80211_TARGET >= __MAC_26_0
         AirportItlwmCopyBSDName(itlwm->fAWDLInterface, data);
+#endif
         AirportItlwmStep0Log(this, "AWDL interface already exists bsd=%s", data->bsd_name);
         return kIOReturnSuccess;
     }
@@ -1325,8 +1327,10 @@ IOReturn AirportItlwmSkywalkInterface::setVIRTUAL_IF_CREATE(apple80211_virt_if_c
 
     if (vif != nullptr) {
         reinterpret_cast<IOService *>(vif)->registerService(0);
+#if __IO80211_TARGET >= __MAC_26_0
         if (data->role == APPLE80211_VIF_AWDL)
             AirportItlwmCopyBSDName(vif, data);
+#endif
         AirportItlwmStep0Log(this, "registerService vif=%p done bsd=%s", vif, data->bsd_name);
     }
     return kIOReturnSuccess;
