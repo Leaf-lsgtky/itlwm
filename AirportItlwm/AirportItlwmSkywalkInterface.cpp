@@ -1117,10 +1117,8 @@ void *AirportItlwmSkywalkInterface::getP2PSkywalkPeerMgr()
 // Step 2: publish the AWDL virtual interface to the BSD stack.  Creating and
 // attaching an IO80211VirtualInterface only puts it in the IORegistry; the
 // "awdl0" ifnet comes from IOSkywalkFamily's BSD client, which needs the
-// interface to carry a RegistrationInfo, a packet buffer pool and at least one
-// packet queue before it is registered.  None of these classes can be built
-// through their metaclasses from a kext (alloc() returns NULL), so allocate
-// them with the family's own operator new / constructor.
+// interface to carry a RegistrationInfo, a packet buffer pool and a queue set
+// with TX/RX submission and completion queues before it is registered.
 struct IOSkywalkPoolOptions {
     uint32_t packetCount;
     uint32_t bufferCount;
@@ -1170,6 +1168,22 @@ static unsigned int AirportItlwmAWDLTxQueueCallback(OSObject *, void **, const v
 static unsigned int AirportItlwmAWDLCompletionQueueCallback(OSObject *, void **, void **, unsigned int, void *)
 {
     return 0;
+}
+
+// apple80211_virt_if_create_data carries the BSD name back to the caller:
+// AppleBCMWLANCore::setVIRTUAL_IF_CREATE copies the new interface's BSD name
+// into data->bsd_name (+0x10, IFNAMSIZ bytes). airportd uses that name to
+// update its virtual-interface cache, so leaving it empty makes the AWDL
+// interface invisible to wifip2pd even though awdl0 exists.
+static void AirportItlwmCopyBSDName(IO80211VirtualInterface *vif, apple80211_virt_if_create_data *data)
+{
+    if (vif == nullptr || data == nullptr)
+        return;
+    const char *name = reinterpret_cast<IOSkywalkEthernetInterface *>(vif)->getBSDName();
+    if (name == nullptr)
+        return;
+    memset(data->bsd_name, 0, sizeof(data->bsd_name));
+    strlcpy((char *)data->bsd_name, name, sizeof(data->bsd_name));
 }
 
 // RegistrationInfo layout (macOS 26, size 0x130):
@@ -1261,7 +1275,8 @@ IOReturn AirportItlwmSkywalkInterface::setVIRTUAL_IF_CREATE(apple80211_virt_if_c
 
     AirportItlwm *itlwm = OSDynamicCast(AirportItlwm, controller);
     if (data->role == APPLE80211_VIF_AWDL && itlwm != nullptr && itlwm->fAWDLInterface != nullptr) {
-        AirportItlwmStep0Log(this, "AWDL interface already exists");
+        AirportItlwmCopyBSDName(itlwm->fAWDLInterface, data);
+        AirportItlwmStep0Log(this, "AWDL interface already exists bsd=%s", data->bsd_name);
         return kIOReturnSuccess;
     }
 
@@ -1297,7 +1312,9 @@ IOReturn AirportItlwmSkywalkInterface::setVIRTUAL_IF_CREATE(apple80211_virt_if_c
 
     if (vif != nullptr) {
         reinterpret_cast<IOService *>(vif)->registerService(0);
-        AirportItlwmStep0Log(this, "registerService vif=%p done", vif);
+        if (data->role == APPLE80211_VIF_AWDL)
+            AirportItlwmCopyBSDName(vif, data);
+        AirportItlwmStep0Log(this, "registerService vif=%p done bsd=%s", vif, data->bsd_name);
     }
     return kIOReturnSuccess;
 }
