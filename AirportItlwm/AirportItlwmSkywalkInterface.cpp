@@ -1131,22 +1131,45 @@ struct IOSkywalkPoolOptions {
     uint64_t reserved;
 };
 
-static const size_t kIOSkywalkPacketQueueSize = 0xd8;
-
 extern "C" void *IOSkywalkPoolWithName(const char *, OSObject *, unsigned int, const IOSkywalkPoolOptions *)
     __asm__("__ZN25IOSkywalkPacketBufferPool8withNameEPKcP8OSObjectjPKNS_11PoolOptionsE");
-extern "C" void *IOSkywalkQueueNew(size_t) __asm__("__ZN20IOSkywalkPacketQueuenwEm");
-extern "C" void IOSkywalkQueueCtor(void *, const OSMetaClass *) __asm__("__ZN20IOSkywalkPacketQueueC2EPK11OSMetaClass");
-extern "C" bool IOSkywalkQueueInit(void *, IOSkywalkPacketBufferPool *, unsigned int, unsigned int,
-                                   unsigned int, unsigned int, OSObject *,
-                                   void (*)(OSObject *, ...), void *)
-    __asm__("__ZN20IOSkywalkPacketQueue12initWithPoolEP25IOSkywalkPacketBufferPooljjjjP8OSObjectPFvS3_zEPv");
-extern "C" char IOSkywalkQueueMetaClass[] __asm__("__ZN20IOSkywalkPacketQueue10gMetaClassE");
+
+// IOSkywalkPacketQueue::performCommand(0x10000) is how IOSkywalkQueueSet learns
+// a queue's direction. The base class returns kIOReturnUnsupported, so a bare
+// IOSkywalkPacketQueue never lands in any of the queue set's TX/RX arrays and
+// the nexus provider instance cannot be built. Use the four concrete queue
+// classes, which report directions 1 (TX submission), 2 (TX completion),
+// 3 (RX submission) and 4 (RX completion).
+typedef unsigned int (*IOSkywalkTxQueueCallback)(OSObject *, void **, const void **, unsigned int, void *);
+typedef unsigned int (*IOSkywalkCompletionQueueCallback)(OSObject *, void **, void **, unsigned int, void *);
+
+extern "C" void *IOSkywalkTxSubmissionQueueWithPool(IOSkywalkPacketBufferPool *, unsigned int, unsigned int,
+                                                    OSObject *, IOSkywalkTxQueueCallback, void *, unsigned int)
+    __asm__("__ZN26IOSkywalkTxSubmissionQueue8withPoolEP25IOSkywalkPacketBufferPooljjP8OSObjectPFjS3_PS_PKP15IOSkywalkPacketjPvES9_j");
+extern "C" void *IOSkywalkRxSubmissionQueueWithPool(IOSkywalkPacketBufferPool *, unsigned int, unsigned int,
+                                                    unsigned int, OSObject *, IOSkywalkTxQueueCallback, void *,
+                                                    unsigned int)
+    __asm__("__ZN26IOSkywalkRxSubmissionQueue8withPoolEP25IOSkywalkPacketBufferPooljjjP8OSObjectPFjS3_PS_PKP15IOSkywalkPacketjPvES9_j");
+extern "C" void *IOSkywalkTxCompletionQueueWithPool(IOSkywalkPacketBufferPool *, unsigned int, unsigned int,
+                                                    OSObject *, IOSkywalkCompletionQueueCallback, void *,
+                                                    unsigned int)
+    __asm__("__ZN26IOSkywalkTxCompletionQueue8withPoolEP25IOSkywalkPacketBufferPooljjP8OSObjectPFjS3_PS_PP15IOSkywalkPacketjPvES8_j");
+extern "C" void *IOSkywalkRxCompletionQueueWithPool(IOSkywalkPacketBufferPool *, unsigned int, unsigned int,
+                                                    OSObject *, IOSkywalkCompletionQueueCallback, void *,
+                                                    unsigned int)
+    __asm__("__ZN26IOSkywalkRxCompletionQueue8withPoolEP25IOSkywalkPacketBufferPooljjP8OSObjectPFjS3_PS_PP15IOSkywalkPacketjPvES8_j");
+
 extern "C" void IO80211SetAwdlInterface(IO80211Controller *, IO80211VirtualInterface *)
     __asm__("__ZN17IO80211Controller16setAwdlInterfaceEP23IO80211VirtualInterface");
 
-static void AirportItlwmAWDLQueueCallback(OSObject *, ...)
+static unsigned int AirportItlwmAWDLTxQueueCallback(OSObject *, void **, const void **, unsigned int, void *)
 {
+    return 0;
+}
+
+static unsigned int AirportItlwmAWDLCompletionQueueCallback(OSObject *, void **, void **, unsigned int, void *)
+{
+    return 0;
 }
 
 // RegistrationInfo layout (macOS 26, size 0x130):
@@ -1187,27 +1210,32 @@ static bool AirportItlwmRegisterAWDLInterface(IO80211VirtualInterface *vif, cons
         return false;
     }
 
-    void *queue = IOSkywalkQueueNew(kIOSkywalkPacketQueueSize);
-    if (queue == nullptr) {
-        AirportItlwmStep0Log(vifService, "AWDL packet queue allocation failed");
-        return false;
-    }
-    memset(queue, 0, kIOSkywalkPacketQueueSize);
-    IOSkywalkQueueCtor(queue, (const OSMetaClass *)IOSkywalkQueueMetaClass);
-    if (!IOSkywalkQueueInit(queue, pool, 0, 1, 0, 0, (OSObject *)vif,
-                            AirportItlwmAWDLQueueCallback, nullptr)) {
-        AirportItlwmStep0Log(vifService, "AWDL packet queue initWithPool failed");
+    void *txSubmission = IOSkywalkTxSubmissionQueueWithPool(
+        pool, 64, 0, (OSObject *)vif, AirportItlwmAWDLTxQueueCallback, nullptr, 0);
+    void *txCompletion = IOSkywalkTxCompletionQueueWithPool(
+        pool, 64, 0, (OSObject *)vif, AirportItlwmAWDLCompletionQueueCallback, nullptr, 0);
+    void *rxSubmission = IOSkywalkRxSubmissionQueueWithPool(
+        pool, 64, 0, 0, (OSObject *)vif, AirportItlwmAWDLTxQueueCallback, nullptr, 0);
+    void *rxCompletion = IOSkywalkRxCompletionQueueWithPool(
+        pool, 64, 0, (OSObject *)vif, AirportItlwmAWDLCompletionQueueCallback, nullptr, 0);
+    AirportItlwmStep0Log(vifService, "AWDL queues txSub=%p txCmp=%p rxSub=%p rxCmp=%p",
+                         txSubmission, txCompletion, rxSubmission, rxCompletion);
+    if (txSubmission == nullptr || txCompletion == nullptr || rxSubmission == nullptr ||
+        rxCompletion == nullptr) {
+        AirportItlwmStep0Log(vifService, "AWDL packet queue creation failed");
         return false;
     }
 
-    IOSkywalkPacketQueue *queues[1] = { (IOSkywalkPacketQueue *)queue };
-    IOReturn kr = eth->registerEthernetInterface(&info, queues, 1, pool, pool, 0);
-    AirportItlwmStep0Log(vifService, "AWDL registerEthernetInterface pool=%p queue=%p kr=%#x",
-                         pool, queue, kr);
+    IOSkywalkPacketQueue *queues[4] = {
+        (IOSkywalkPacketQueue *)txSubmission, (IOSkywalkPacketQueue *)txCompletion,
+        (IOSkywalkPacketQueue *)rxSubmission, (IOSkywalkPacketQueue *)rxCompletion
+    };
+    IOReturn kr = eth->registerEthernetInterface(&info, queues, 4, pool, pool, 0);
+    AirportItlwmStep0Log(vifService, "AWDL registerEthernetInterface pool=%p kr=%#x", pool, kr);
 
     if (itlwm != nullptr) {
         itlwm->fAWDLPacketPool = pool;
-        itlwm->fAWDLPacketQueue = queue;
+        itlwm->fAWDLPacketQueue = txSubmission;
     }
     return kr == kIOReturnSuccess;
 }
