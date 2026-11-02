@@ -1113,6 +1113,106 @@ void *AirportItlwmSkywalkInterface::getP2PSkywalkPeerMgr()
 }
 #endif
 
+#if __IO80211_TARGET >= __MAC_26_0
+// Step 2: publish the AWDL virtual interface to the BSD stack.  Creating and
+// attaching an IO80211VirtualInterface only puts it in the IORegistry; the
+// "awdl0" ifnet comes from IOSkywalkFamily's BSD client, which needs the
+// interface to carry a RegistrationInfo, a packet buffer pool and at least one
+// packet queue before it is registered.  None of these classes can be built
+// through their metaclasses from a kext (alloc() returns NULL), so allocate
+// them with the family's own operator new / constructor.
+struct IOSkywalkPoolOptions {
+    uint32_t packetCount;
+    uint32_t bufferCount;
+    uint32_t bufferSize;
+    uint32_t maxBuffersPerPacket;
+    uint32_t memorySegmentSize;
+    uint32_t poolFlags;
+    uint64_t reserved;
+};
+
+static const size_t kIOSkywalkPacketQueueSize = 0xd8;
+
+extern "C" void *IOSkywalkPoolWithName(const char *, OSObject *, unsigned int, const IOSkywalkPoolOptions *)
+    __asm__("__ZN25IOSkywalkPacketBufferPool8withNameEPKcP8OSObjectjPKNS_11PoolOptionsE");
+extern "C" void *IOSkywalkQueueNew(size_t) __asm__("__ZN20IOSkywalkPacketQueuenwEm");
+extern "C" void IOSkywalkQueueCtor(void *, const OSMetaClass *) __asm__("__ZN20IOSkywalkPacketQueueC2EPK11OSMetaClass");
+extern "C" bool IOSkywalkQueueInit(void *, IOSkywalkPacketBufferPool *, unsigned int, unsigned int,
+                                   unsigned int, unsigned int, OSObject *,
+                                   void (*)(OSObject *, ...), void *)
+    __asm__("__ZN20IOSkywalkPacketQueue12initWithPoolEP25IOSkywalkPacketBufferPooljjjjP8OSObjectPFvS3_zEPv");
+extern "C" char IOSkywalkQueueMetaClass[] __asm__("__ZN20IOSkywalkPacketQueue10gMetaClassE");
+extern "C" void IO80211SetAwdlInterface(IO80211Controller *, IO80211VirtualInterface *)
+    __asm__("__ZN17IO80211Controller16setAwdlInterfaceEP23IO80211VirtualInterface");
+
+static void AirportItlwmAWDLQueueCallback(OSObject *, ...)
+{
+}
+
+// RegistrationInfo layout (macOS 26, size 0x130):
+//   +0x00 version (1) / size (0x130)   +0x30 BSD name prefix (char const *)
+//   +0x38 BSD unit number (u32)        +0x108 MAC address (6 bytes)
+static bool AirportItlwmRegisterAWDLInterface(IO80211VirtualInterface *vif, const uint8_t *mac,
+                                              AirportItlwm *itlwm)
+{
+    // IO80211VirtualInterface is only forward-declared in the macOS 26 headers;
+    // the object itself derives from IOSkywalkEthernetInterface at offset 0.
+    IOSkywalkEthernetInterface *eth = reinterpret_cast<IOSkywalkEthernetInterface *>(vif);
+    IOService *vifService = reinterpret_cast<IOService *>(vif);
+
+    IOSkywalkEthernetInterface::RegistrationInfo info;
+    memset(&info, 0, sizeof(info));
+    if (!eth->initRegistrationInfo(&info, 1, sizeof(info))) {
+        AirportItlwmStep0Log(vifService, "AWDL initRegistrationInfo failed");
+        return false;
+    }
+
+    *(const char **)(info.bytes + 0x30) = "awdl";
+    *(uint32_t *)(info.bytes + 0x38) = 0;
+    memcpy(info.bytes + 0x108, mac, APPLE80211_ADDR_LEN);
+
+    IOSkywalkPoolOptions opts;
+    memset(&opts, 0, sizeof(opts));
+    opts.packetCount = 64;
+    opts.bufferCount = 128;
+    opts.bufferSize = 2048;
+    opts.maxBuffersPerPacket = 1;
+    opts.memorySegmentSize = 0x10000;
+    opts.poolFlags = 0;
+
+    IOSkywalkPacketBufferPool *pool =
+        (IOSkywalkPacketBufferPool *)IOSkywalkPoolWithName("awdl", (OSObject *)vif, 1, &opts);
+    if (pool == nullptr) {
+        AirportItlwmStep0Log(vifService, "AWDL packet buffer pool creation failed");
+        return false;
+    }
+
+    void *queue = IOSkywalkQueueNew(kIOSkywalkPacketQueueSize);
+    if (queue == nullptr) {
+        AirportItlwmStep0Log(vifService, "AWDL packet queue allocation failed");
+        return false;
+    }
+    memset(queue, 0, kIOSkywalkPacketQueueSize);
+    IOSkywalkQueueCtor(queue, (const OSMetaClass *)IOSkywalkQueueMetaClass);
+    if (!IOSkywalkQueueInit(queue, pool, 0, 1, 0, 0, (OSObject *)vif,
+                            AirportItlwmAWDLQueueCallback, nullptr)) {
+        AirportItlwmStep0Log(vifService, "AWDL packet queue initWithPool failed");
+        return false;
+    }
+
+    IOSkywalkPacketQueue *queues[1] = { (IOSkywalkPacketQueue *)queue };
+    IOReturn kr = eth->registerEthernetInterface(&info, queues, 1, pool, pool, 0);
+    AirportItlwmStep0Log(vifService, "AWDL registerEthernetInterface pool=%p queue=%p kr=%#x",
+                         pool, queue, kr);
+
+    if (itlwm != nullptr) {
+        itlwm->fAWDLPacketPool = pool;
+        itlwm->fAWDLPacketQueue = queue;
+    }
+    return kr == kIOReturnSuccess;
+}
+#endif
+
 IOReturn AirportItlwmSkywalkInterface::setVIRTUAL_IF_CREATE(apple80211_virt_if_create_data *data)
 {
     AirportItlwmStep0Log(this, "setVIRTUAL_IF_CREATE role=%u mac=%02x:%02x:%02x:%02x:%02x:%02x bsd=%.*s",
@@ -1140,13 +1240,28 @@ IOReturn AirportItlwmSkywalkInterface::setVIRTUAL_IF_CREATE(apple80211_virt_if_c
     ether_addr mac;
     memcpy(mac.octet, data->mac, APPLE80211_ADDR_LEN);
     IO80211VirtualInterface *vif = nullptr;
-    if (!controller->attachVirtualInterface(&vif, &mac, data->role, true)) {
+    // Register the service ourselves: IOSkywalkNetworkBSDClient matches on
+    // IOSkywalkNetworkInterface as soon as the vif is published, and its start
+    // fails unless the interface already has a RegistrationInfo and BSD name.
+    if (!controller->attachVirtualInterface(&vif, &mac, data->role, false)) {
         if (itlwm != nullptr)
             itlwm->fAWDLInterface = nullptr;
         AirportItlwmStep0Log(this, "attachVirtualInterface role=%u failed", data->role);
         return kIOReturnError;
     }
     AirportItlwmStep0Log(this, "attachVirtualInterface role=%u ok vif=%p", data->role, vif);
+
+#if __IO80211_TARGET >= __MAC_26_0
+    if (data->role == APPLE80211_VIF_AWDL && vif != nullptr) {
+        AirportItlwmRegisterAWDLInterface(vif, data->mac, itlwm);
+        IO80211SetAwdlInterface(controller, vif);
+    }
+#endif
+
+    if (vif != nullptr) {
+        reinterpret_cast<IOService *>(vif)->registerService(0);
+        AirportItlwmStep0Log(this, "registerService vif=%p done", vif);
+    }
     return kIOReturnSuccess;
 }
 

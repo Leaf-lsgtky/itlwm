@@ -154,6 +154,8 @@ bool AirportItlwm::init(OSDictionary *properties)
     XYLog("%s\n", __PRETTY_FUNCTION__);
     bool ret = super::init(properties);
     fAWDLInterface = nullptr;
+    fAWDLPacketPool = nullptr;
+    fAWDLPacketQueue = nullptr;
     awdlSyncEnable = true;
     power_state = 0;
     memset(geo_location_cc, 0, sizeof(geo_location_cc));

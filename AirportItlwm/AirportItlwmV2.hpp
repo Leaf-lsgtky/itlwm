@@ -266,6 +266,9 @@ public:
     
     //AWDL
     IO80211VirtualInterface *fAWDLInterface;
+    // Skywalk objects backing the AWDL virtual interface's BSD registration.
+    void *fAWDLPacketPool;
+    void *fAWDLPacketQueue;
     uint8_t *syncFrameTemplate;
     uint32_t syncFrameTemplateLength;
     uint8_t awdlBSSID[6];
