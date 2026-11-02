@@ -270,7 +270,7 @@ bool AirportItlwm::start(IOService *provider)
         return false;
 #endif
     XYLog("%s\n", __PRETTY_FUNCTION__);
-    AirportItlwmStep0Log(this, "STEP0 BUILD ACTIVE awdl-probe-v1");
+    AirportItlwmStep0Log(this, "STEP0 BUILD ACTIVE awdl-probe-v2");
     struct IOSkywalkEthernetInterface::RegistrationInfo registInfo;
     int boot_value = 0;
 
@@ -1017,6 +1017,10 @@ getCARD_CAPABILITIES(OSObject *object,
     // WCL uses this capability together with the BSS HE IE for PHY reporting.
     if (caps & IEEE80211_C_HE)
         cd->capabilities[17] |= 0x80;
+    // wifip2pd gates AWDL virtual-interface creation on byte 4, bit 0.
+    // Without it it logs "device is missing the capability" and never sends
+    // APPLE80211_IOC_VIRTUAL_IF_CREATE, so awdl0 is never created.
+    cd->capabilities[4] |= 0x01;
 #else
     cd->capabilities[2] = 0xFF; // BURST, WME, SHORT_GI_40MHZ, SHORT_GI_20MHZ, WOW, TSN, ?, ?
     cd->capabilities[3] = 0x2B;
@@ -1060,11 +1064,14 @@ getCARD_CAPABILITIES(OSObject *object,
 //    cd->capabilities[11] |= (2 | 4 | 8 | 0x10 | 0x20 | 0x40 | 0x80);
 
 #endif
-    if (step0CapLogs <= 8) {
-        AirportItlwmStep0Log(this, "caps %02x %02x %02x %02x %02x %02x %02x",
-                             cd->capabilities[0], cd->capabilities[1], cd->capabilities[2],
-                             cd->capabilities[3], cd->capabilities[5], cd->capabilities[6],
-                             cd->capabilities[8]);
+    static bool step0CapsLogged = false;
+    if (!step0CapsLogged) {
+        char capsHex[sizeof(cd->capabilities) * 3 + 1];
+        size_t pos = 0;
+        for (size_t i = 0; i < sizeof(cd->capabilities) && pos + 4 < sizeof(capsHex); i++)
+            pos += snprintf(capsHex + pos, sizeof(capsHex) - pos, "%02x ", cd->capabilities[i]);
+        step0CapsLogged = true;
+        AirportItlwmStep0Log(this, "caps[%u] %s", (unsigned int)sizeof(cd->capabilities), capsHex);
     }
     return kIOReturnSuccess;
 }
