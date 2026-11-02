@@ -1253,8 +1253,17 @@ IOReturn AirportItlwmSkywalkInterface::setVIRTUAL_IF_CREATE(apple80211_virt_if_c
 
 #if __IO80211_TARGET >= __MAC_26_0
     if (data->role == APPLE80211_VIF_AWDL && vif != nullptr) {
-        AirportItlwmRegisterAWDLInterface(vif, data->mac, itlwm);
-        IO80211SetAwdlInterface(controller, vif);
+        // IO80211SkywalkInterface::start() is what creates the peer manager
+        // (IO80211VirtualInterface::createPeerManager -> IO80211AWDLPeerManager)
+        // and stores it at skywalkExpansion+0x28. Without it,
+        // IO80211Controller::joinDone() dereferences that NULL slot as soon as
+        // airportd disassociates, panicking the kernel.
+        bool started = reinterpret_cast<IOService *>(vif)->start(controller);
+        AirportItlwmStep0Log(this, "AWDL vif start=%d", started);
+        if (started) {
+            AirportItlwmRegisterAWDLInterface(vif, data->mac, itlwm);
+            IO80211SetAwdlInterface(controller, vif);
+        }
     }
 #endif
 

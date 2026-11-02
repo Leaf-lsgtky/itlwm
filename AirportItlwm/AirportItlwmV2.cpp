@@ -287,7 +287,7 @@ bool AirportItlwm::start(IOService *provider)
         return false;
 #endif
     XYLog("%s\n", __PRETTY_FUNCTION__);
-    AirportItlwmStep0Log(this, "STEP1 BUILD ACTIVE awdl-create-v1");
+    AirportItlwmStep0Log(this, "STEP2 BUILD ACTIVE awdl-start-v1");
     struct IOSkywalkEthernetInterface::RegistrationInfo registInfo;
     int boot_value = 0;
 
