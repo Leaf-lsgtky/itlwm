@@ -1141,11 +1141,10 @@ extern "C" void *IOSkywalkPoolWithName(const char *, OSObject *, unsigned int, c
 typedef unsigned int (*IOSkywalkTxQueueCallback)(OSObject *, void **, const void **, unsigned int, void *);
 typedef unsigned int (*IOSkywalkCompletionQueueCallback)(OSObject *, void **, void **, unsigned int, void *);
 
-// IO80211SkywalkInterface::handleChosenMedia(unsigned int). The generic
-// IO80211VirtualInterface starts out reporting IFM_ETHER media; airportd
-// enumerates virtual interfaces with SIOCGIFMEDIA and keeps only
-// (ifm_current & IFM_NMASK) == IFM_IEEE80211, so an AWDL vif that stays on
-// IFM_ETHER never shows up in Apple80211GetVirtualIfListCopy.
+// IO80211SkywalkInterface::handleChosenMedia(unsigned int) looks the medium up
+// in the controller's media dictionary and applies it there. It does not change
+// the vif's own SIOCGIFMEDIA state, which comes from RegistrationInfo +0x28, so
+// it is only a best-effort controller update.
 extern "C" IOReturn IO80211VifHandleChosenMedia(void *, unsigned int)
     __asm__("__ZN23IO80211SkywalkInterface17handleChosenMediaEj");
 
@@ -1215,6 +1214,14 @@ static bool AirportItlwmRegisterAWDLInterface(IO80211VirtualInterface *vif, cons
     *(const char **)(info.bytes + 0x30) = "awdl";
     *(uint32_t *)(info.bytes + 0x38) = 0;
     memcpy(info.bytes + 0x108, mac, APPLE80211_ADDR_LEN);
+
+    // The initial media comes from RegistrationInfo +0x28, which
+    // initRegistrationInfo fills from getInitialMedia() (IFM_ETHER = 0x20).
+    // registerNetworkInterface copies that value into the interface's media
+    // descriptor, and SIOCGIFMEDIA reports it as ifm_current. airportd keeps
+    // only interfaces whose (ifm_current & IFM_NMASK) is IFM_IEEE80211, so the
+    // AWDL vif must start on 802.11 media instead of ethernet.
+    *(uint32_t *)(info.bytes + 0x28) = 0x80 /* IFM_IEEE80211 */;
 
     IOSkywalkPoolOptions opts;
     memset(&opts, 0, sizeof(opts));
