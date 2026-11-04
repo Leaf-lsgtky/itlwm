@@ -1223,6 +1223,12 @@ static bool AirportItlwmRegisterAWDLInterface(IO80211VirtualInterface *vif, cons
     // AWDL vif must start on 802.11 media instead of ethernet.
     *(uint32_t *)(info.bytes + 0x28) = 0x80 /* IFM_IEEE80211 */;
 
+    // SIOCGIFTYPE reports RegistrationInfo +0xc as the interface subtype.
+    // airportd's alternate enumeration path keeps only interfaces with
+    // if_type IFT_ETHER and subtype IFNET_SUBFAMILY_WIFI (3), the value en2
+    // reports; the generic vif otherwise reports 0.
+    *(uint32_t *)(info.bytes + 0xc) = 3 /* IFNET_SUBFAMILY_WIFI */;
+
     IOSkywalkPoolOptions opts;
     memset(&opts, 0, sizeof(opts));
     opts.packetCount = 64;
